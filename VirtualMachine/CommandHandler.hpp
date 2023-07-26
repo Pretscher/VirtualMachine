@@ -56,8 +56,12 @@ private:
     vector<string> returnFromFunction(string functionName);
     string currentFunctionName;
 
-    //for handling the static segment
-    void handleClasses() {
+    //maps the class and the index of the static variable to the name of a variable declared with @...
+    //Like this we can give the responsibility of distributing ram adresses for static variables to the assembler!
+    vector<string> staticInitialisations() {
+        //this map will hold how many static variables the class needs. If static variables 1 and 3 are used, we create variables 1, 2 and 3, because
+        //it seems the user wants the second static variable to exist, and maybe he wants to use them in assembly code that he mixes with the vm-translated
+        //code. 
         map<string, int> maxStaticIndexForClass;
         int oldLine = parser.getLineNumber();
         while (parser.hasMoreLines()) {
@@ -89,11 +93,19 @@ private:
             parser.advance();
         }
         parser.gotoLine(oldLine);
-        int lastOffset = 0;
+
+        vector<string> out;
         for (auto entry : maxStaticIndexForClass) {
-            classStaticOffset[entry.first] = lastOffset;
-            lastOffset += entry.second;
+            for (int i = 0; i < entry.second; i++) {
+                out.push_back("@" + entry.first + ".static" + std::to_string(i));
+                out.push_back("M=0");//init the variables to 0
+            }
         }
+        return out;
+    }
+
+    string getStaticName(string index) {
+        return currentClass + ".static" + index;
     }
 
     void actualizeCurrentClass() {
@@ -105,5 +117,4 @@ private:
         }
     }
     string currentClass;
-    map<string, int> classStaticOffset;
 };

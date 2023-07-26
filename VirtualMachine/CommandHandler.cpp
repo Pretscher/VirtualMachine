@@ -2,7 +2,6 @@
 
 
 vector<string> CommandHandler::translate() {
-    handleClasses();//first scan the classes for usage of static variables and calculate an optimal distribution of static space
     vector<string> instructions;
     //always start with those instructrions
     Utility::append(instructions, {
@@ -11,6 +10,8 @@ vector<string> CommandHandler::translate() {
     "@SP",
     "M=D",
         });
+    Utility::append(instructions, staticInitialisations());
+
     bool init = false;
     while (parser.hasMoreLines()) {
         if (parser.getTokens().size() > 0) {//just skip empty lines (or comment lines that were converted to empty lines earlier)
@@ -126,10 +127,14 @@ vector<string> CommandHandler::pushConstantToStack(string constant) {
 
 vector<string> CommandHandler::pushSymbol(vector<string> tokens) {
     vector<string> out;
-    if (tokens[1] == "static" || tokens[1] == "temp") {
-        int address = 0;
-        if (tokens[1] == "static") address = 16 + classStaticOffset[currentClass];//all classes have different places for their static variables.
-        if (tokens[1] == "temp") address = 5;
+    if (tokens[1] == "static") {
+        out = {
+            "@" + getStaticName(tokens[2]),
+            "D=M"
+        };
+    }
+    else if (tokens[1] == "temp") {
+        int address = 5;
         address += std::stoi(tokens[2]);
         out = {
             "@" + std::to_string(address),
@@ -162,12 +167,15 @@ vector<string> CommandHandler::pushSymbol(vector<string> tokens) {
 
 vector<string> CommandHandler::pop(vector<string> tokens) {
     vector<string> out;
-    if (tokens[1] == "static" || tokens[1] == "temp") {
-        int address = 0;
-        if (tokens[1] == "static") address = 16 + classStaticOffset[currentClass];
-        if (tokens[1] == "temp") {
-            address = 5;
-        }
+    if (tokens[1] == "static") {
+        popToD(out);
+        Utility::append(out, {
+            "@" + getStaticName(tokens[2]),
+            "M=D"
+        });
+    }
+    else if (tokens[1] == "temp") {
+        int address = 5;
         address += std::stoi(tokens[2]);
         popToD(out);
         vector<string> append = {
