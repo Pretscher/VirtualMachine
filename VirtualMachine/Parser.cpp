@@ -30,6 +30,7 @@ vector<string> Parser::readInput(const char* path) {
             return readSingleFile(pathStr);
         }
     }
+    multipleFiles = true;
     return readFolder(pathStr);
 }
 
@@ -62,7 +63,7 @@ vector<string> Parser::readFolder(string path) {
             fileNameToWrite = fileName;
         }
         if (entry.path().extension() == ".vm") {
-            //check if the file ends with Sys.vm. If so, put this at the start.
+            //check if the file ends with Sys.vm. If so, put this at the start for readability of the assembly output
             bool isSys = false;
             if (entry.path().string().substr(entry.path().string().length() - 6) == "Sys.vm") {
                 isSys = true;

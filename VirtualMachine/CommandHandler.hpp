@@ -17,7 +17,7 @@ private:
     vector<string> pushSymbol(vector<string> tokens);
     //converts symbols to their corresponding Hack Assembly pointers (e.g. local to LCL)
     string symbolToSymbolPointer(vector<string> tokens);
-    
+
     /*pops the TOS and puts it in the D-Register.You can perform an operation on it, like "D=-D", before
     it gets pushed to the stack again*/
     vector<string> changeTopOfStack(string operation);
@@ -55,4 +55,55 @@ private:
     vector<string> function(string functionName, string localVariableCount);
     vector<string> returnFromFunction(string functionName);
     string currentFunctionName;
+
+    //for handling the static segment
+    void handleClasses() {
+        map<string, int> maxStaticIndexForClass;
+        int oldLine = parser.getLineNumber();
+        while (parser.hasMoreLines()) {
+            //for the collective of all functions of the class, find the highest index of static that is read or written. That, plus 1, is the length
+            //of that static segment that should be dedicated to this class.
+            if (parser.isLineFunctionStart()) {
+                vector<string> functionLines = parser.readFunction();
+
+                int highestStaticVariableIndex = -1;
+                int currentStaticVariableIndex = -1;
+                for (string line : functionLines) {
+                    if (line.substr(0, 11) == "push static") {//indices 0 to 10
+                        currentStaticVariableIndex = std::stoi(line.substr(12, 12));//index 12
+                    }
+                    else if (line.substr(0, 10) == "pop static") {//indices 0 to 9
+                        currentStaticVariableIndex = std::stoi(line.substr(11, 11));//index 11
+                    }
+
+                    if (currentStaticVariableIndex > highestStaticVariableIndex) {
+                        highestStaticVariableIndex = currentStaticVariableIndex;
+                    }
+                }
+
+                actualizeCurrentClass();
+                if (maxStaticIndexForClass[currentClass] < highestStaticVariableIndex + 1) {
+                    maxStaticIndexForClass[currentClass] = highestStaticVariableIndex + 1;
+                }
+            }
+            parser.advance();
+        }
+        parser.gotoLine(oldLine);
+        int lastOffset = 0;
+        for (auto entry : maxStaticIndexForClass) {
+            classStaticOffset[entry.first] = lastOffset;
+            lastOffset += entry.second;
+        }
+    }
+
+    void actualizeCurrentClass() {
+        if (parser.isLineFunctionStart() == true) {
+            int dotPos = parser.getLine().find(".");
+            if (dotPos != string::npos) {//if there's a dot in the function name, its from a class
+                currentClass = parser.getLine().substr(9, dotPos - 9);//from start of name (index 9) to dot
+            }
+        }
+    }
+    string currentClass;
+    map<string, int> classStaticOffset;
 };

@@ -2,8 +2,9 @@
 
 
 vector<string> CommandHandler::translate() {
+    handleClasses();//first scan the classes for usage of static variables and calculate an optimal distribution of static space
     vector<string> instructions;
-    //always start with setting the Stack-Pointer to 256
+    //always start with those instructrions
     Utility::append(instructions, {
     "@256",
     "D=A",
@@ -14,11 +15,12 @@ vector<string> CommandHandler::translate() {
     while (parser.hasMoreLines()) {
         if (parser.getTokens().size() > 0) {//just skip empty lines (or comment lines that were converted to empty lines earlier)
             vector<string> currentInstructions;
-            if (init == false) {
+            if (init == false && parser.hasMultipleFiles() == true) {//if multiple files, add "call Sys.init 0" command
                 init = true;
-                currentInstructions = translateCommand({ "call", "Sys.init", "0"});//call sys.init at the start (after setting SP)
+                currentInstructions = translateCommand({ "call", "Sys.init", "0" });//call sys.init at the start
             }
             else {
+                actualizeCurrentClass();//we always need to know in which class we are to get the correct static segment, if a static var is used
                 currentInstructions = translateCommand(parser.getTokens());
                 parser.advance();
             }
@@ -65,7 +67,7 @@ vector<string> CommandHandler::translateCommand(vector<string> tokens) {
         else if (command == "not") {
             return changeTopOfStack("D=!D");
         }
-        else if(command == "label") {
+        else if (command == "label") {
             return { "(" + tokens[1] + ")" };
         }
         else if (command == "goto") {
@@ -126,7 +128,7 @@ vector<string> CommandHandler::pushSymbol(vector<string> tokens) {
     vector<string> out;
     if (tokens[1] == "static" || tokens[1] == "temp") {
         int address = 0;
-        if (tokens[1] == "static") address = 15;
+        if (tokens[1] == "static") address = 16 + classStaticOffset[currentClass];//all classes have different places for their static variables.
         if (tokens[1] == "temp") address = 5;
         address += std::stoi(tokens[2]);
         out = {
@@ -158,14 +160,13 @@ vector<string> CommandHandler::pushSymbol(vector<string> tokens) {
     return out;
 }
 
-int addressCounter = 0;
 vector<string> CommandHandler::pop(vector<string> tokens) {
     vector<string> out;
     if (tokens[1] == "static" || tokens[1] == "temp") {
         int address = 0;
-        if (tokens[1] == "static") address = 15;
-        if (tokens[1] == "temp") { 
-            address = 5; 
+        if (tokens[1] == "static") address = 16 + classStaticOffset[currentClass];
+        if (tokens[1] == "temp") {
+            address = 5;
         }
         address += std::stoi(tokens[2]);
         popToD(out);
@@ -194,7 +195,7 @@ vector<string> CommandHandler::pop(vector<string> tokens) {
             "D=M",//D=the adress of that the symbol points to, so if THIS points to 3000, this is 3000
             "@" + offset,
             "D=D+A",//D = Adress the symbol points to + i
-            "@address" + std::to_string(addressCounter),//we need this memory segment to save the adress, because we need to reuse A to get the address in the stack and cant access the ram through D
+            "@13",//we need this memory segment to save the adress, because we need to reuse A to get the address in the stack and cant access the ram through D
             "M=D"
         };
         popToD(out);
@@ -215,7 +216,7 @@ string CommandHandler::symbolToSymbolPointer(vector<string> tokens) {
 }
 
 void CommandHandler::writeStackToRamAtD(vector<string>& toAdd) {
-    toAdd.push_back("@address" + std::to_string(addressCounter++));
+    toAdd.push_back("@13");
     toAdd.push_back("A=M");//Set A to SymbolPointer + i
     toAdd.push_back("M=D");//Ram[symbolPointer+i]=D
 }
@@ -350,7 +351,7 @@ vector<string> CommandHandler::call(string functionName, string argumentCount) {
         "@" + argumentCount,
         "D=D-A",
         "@ARG",
-        "M=D"});
+        "M=D" });
     //LCL = SP
     Utility::append(out, {
         "@SP",
@@ -369,7 +370,7 @@ vector<string> CommandHandler::call(string functionName, string argumentCount) {
 vector<string> CommandHandler::function(string functionName, string localVariableCount) {
     vector<string> out = {
         "(" + functionName + "_start)",
-        "D=0"};//so that we always push 0 in the following code
+        "D=0" };//so that we always push 0 in the following code
     for (int i = 0; i < std::stoi(localVariableCount); i++) {
         pushD(out);
     }
@@ -383,12 +384,12 @@ vector<string> CommandHandler::returnFromFunction(string functionName) {
     vector<string> out = {
         "@LCL",
         "D=M",//D = address in LCL
-        "@frame" + std::to_string(tempCounter),
+        "@14",//Frame in 14 (popToD uses 13)
         "M=D",//frame = LCL
         "@5",
         "A=D-A",//A = frame - 5
         "D=M",//D = *(frame -5)
-        "@retAddr" + std::to_string(tempCounter),
+        "@15",//return address into R15
         "M=D"
     };
     //pop to *ARG
@@ -405,7 +406,7 @@ vector<string> CommandHandler::returnFromFunction(string functionName) {
         "@SP",
         "M=D",
         //THAT = *(frame-1)
-        "@frame" + std::to_string(tempCounter),
+        "@14",
         "D=M",
         "@1",
         "A=D-A",
@@ -413,7 +414,7 @@ vector<string> CommandHandler::returnFromFunction(string functionName) {
         "@THAT",
         "M=D",
         //THIS = *(frame-2)
-        "@frame" + std::to_string(tempCounter),
+        "@14",
         "D=M",
         "@2",
         "A=D-A",
@@ -421,7 +422,7 @@ vector<string> CommandHandler::returnFromFunction(string functionName) {
         "@THIS",
         "M=D",
         //ARG = *(frame-3)
-        "@frame" + std::to_string(tempCounter),
+        "@14",
         "D=M",
         "@3",
         "A=D-A",
@@ -429,7 +430,7 @@ vector<string> CommandHandler::returnFromFunction(string functionName) {
         "@ARG",
         "M=D",
         //LCL = *(frame-4)
-        "@frame" + std::to_string(tempCounter),
+        "@14",
         "D=M",
         "@4",
         "A=D-A",
@@ -437,7 +438,7 @@ vector<string> CommandHandler::returnFromFunction(string functionName) {
         "@LCL",
         "M=D",
         //return
-        "@retAddr" + std::to_string(tempCounter++),
+        "@15",
         "A=M",
         "0,JMP"
         });
