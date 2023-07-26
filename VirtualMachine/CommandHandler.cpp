@@ -2,15 +2,14 @@
 
 
 vector<string> CommandHandler::translate() {
-    vector<string> instructions;
     //always start with those instructrions
-    Utility::append(instructions, {
-    "@256",
-    "D=A",
-    "@SP",
-    "M=D",
-        });
-    Utility::append(instructions, staticInitialisations());
+    print({
+        "@256",
+        "D=A",
+        "@SP",
+        "M=D",
+    });
+    print(staticInitialisations());
 
     bool init = false;
     while (parser.hasMoreLines()) {
@@ -18,21 +17,20 @@ vector<string> CommandHandler::translate() {
             vector<string> currentInstructions;
             if (init == false && parser.hasMultipleFiles() == true) {//if multiple files, add "call Sys.init 0" command
                 init = true;
-                currentInstructions = translateCommand({ "call", "Sys.init", "0" });//call sys.init at the start
+                 translateCommand({ "call", "Sys.init", "0" });//call sys.init at the start
             }
             else {
                 actualizeCurrentClass();//we always need to know in which class we are to get the correct static segment, if a static var is used
-                currentInstructions = translateCommand(parser.getTokens());
+                translateCommand(parser.getTokens());
                 parser.advance();
             }
-            instructions.insert(instructions.end(), currentInstructions.begin(), currentInstructions.end());
         }
 
     }
-    return instructions;
+    return lines;
 }
 
-vector<string> CommandHandler::translateCommand(vector<string> tokens) {
+void CommandHandler::translateCommand(vector<string> tokens) {
     if (tokens.size() > 0) {
         string command = tokens.at(0);
         if (command == "push") {
@@ -69,7 +67,7 @@ vector<string> CommandHandler::translateCommand(vector<string> tokens) {
             return changeTopOfStack("D=!D");
         }
         else if (command == "label") {
-            return { "(" + tokens[1] + ")" };
+            return print("(" + tokens[1] + ")");
         }
         else if (command == "goto") {
             return gotoLabel(tokens[1]);
@@ -91,85 +89,75 @@ vector<string> CommandHandler::translateCommand(vector<string> tokens) {
             std::exit(0);
         }
     }
-    return { "ERROR: Token passed to translation function is empty!" };
 }
 
-vector<string> CommandHandler::changeTopOfStack(string operation) {
-    vector<string> out;
-    popToD(out);
-    out.push_back(operation);
-    pushD(out);
-    return out;
+void CommandHandler::changeTopOfStack(string operation) {
+    popToD();
+    print(operation);
+    pushD();
 }
 
 /* VM command: push {segment} { number }
 *  Renember to remove the push-element from the tokens before calling!
 */
-vector<string> CommandHandler::push(vector<string> tokens) {
-    vector<string> out;
+void CommandHandler::push(vector<string> tokens) {
     if (tokens[1] == "constant") {
-        out = pushConstantToStack(tokens[2]);
+        pushConstantToStack(tokens[2]);
     }
     else {
-        out = pushSymbol(tokens);
+        pushSymbol(tokens);
     }
-    return out;
 }
 
-vector<string> CommandHandler::pushConstantToStack(string constant) {
-    vector<string> out = {
+void CommandHandler::pushConstantToStack(string constant) {
+    print({
         "@" + constant,
         "D=A"
-    };
-    pushD(out);
-    return out;
+    });
+    pushD();
 }
 
-vector<string> CommandHandler::pushSymbol(vector<string> tokens) {
-    vector<string> out;
+void CommandHandler::pushSymbol(vector<string> tokens) {
     if (tokens[1] == "static") {
-        out = {
+        print({
             "@" + getStaticName(tokens[2]),
             "D=M"
-        };
+        });
     }
     else if (tokens[1] == "temp") {
         int address = 5;
         address += std::stoi(tokens[2]);
-        out = {
+        print({
             "@" + std::to_string(address),
             "D=M"
-        };
+        });
     }
     else if (tokens[1] == "pointer") {
         string symbol = "THIS";
         if (tokens[2] == "1") symbol = "THAT";
-        out = {
+        print({
             "@" + symbol,
             "D=M"
-        };
+        });
     }
     else {
         string symbol = symbolToSymbolPointer(tokens);
         string offset = tokens[2];
-        out = {
+        print({
             "@" + offset,//D = i
             "D=A",
             "@" + symbol,
             "A=D+M",//M is the adress that the symbol points to
             "D=M"//D is now the content of the register the symbol points to
-        };
+        });
     }
-    pushD(out);
-
-    return out;
+    pushD();
 }
 
-vector<string> CommandHandler::pop(vector<string> tokens) {
-    vector<string> out;
+void CommandHandler::pop(vector<string> tokens) {
     if (tokens[1] == "static") {
-        popToD(out);
-        Utility::append(out, {
+        popToD();
+        print({
             "@" + getStaticName(tokens[2]),
             "M=D"
         });
@@ -177,40 +165,35 @@ vector<string> CommandHandler::pop(vector<string> tokens) {
     else if (tokens[1] == "temp") {
         int address = 5;
         address += std::stoi(tokens[2]);
-        popToD(out);
-        vector<string> append = {
+        popToD();
+        print({
             "@" + std::to_string(address),
             "M=D"
-        };
-        Utility::append(out, append);
+        });
     }
     else if (tokens[1] == "pointer") {
         string symbol = "THIS";
         if (tokens[2] == "1") symbol = "THAT";
-        popToD(out);
-        vector<string> append = {
+        popToD();
+        print({
             "@" + symbol,
             "M=D"
-        };
-
-        Utility::append(out, append);
+        });
     }
     else {
         string symbol = symbolToSymbolPointer(tokens);
         string offset = tokens[2];
-        out = {
+        print({
             "@" + symbol,
             "D=M",//D=the adress of that the symbol points to, so if THIS points to 3000, this is 3000
             "@" + offset,
             "D=D+A",//D = Adress the symbol points to + i
             "@13",//we need this memory segment to save the adress, because we need to reuse A to get the address in the stack and cant access the ram through D
             "M=D"
-        };
-        popToD(out);
-        writeStackToRamAtD(out);
+        });
+        popToD();
+        writeStackToRamAtD();
     }
-
-    return out;
 }
 
 
@@ -223,72 +206,79 @@ string CommandHandler::symbolToSymbolPointer(vector<string> tokens) {
     return "ERROR: invalid argument";
 }
 
-void CommandHandler::writeStackToRamAtD(vector<string>& toAdd) {
-    toAdd.push_back("@13");
-    toAdd.push_back("A=M");//Set A to SymbolPointer + i
-    toAdd.push_back("M=D");//Ram[symbolPointer+i]=D
+void CommandHandler::writeStackToRamAtD() {
+    print({
+        "@13",
+        "A=M",//Set A to SymbolPointer + i
+        "M=D"//Ram[symbolPointer+i]=D
+    });
 }
 
-void CommandHandler::incrementSP(vector<string>& toAdd) {
-    toAdd.push_back("@SP");
-    toAdd.push_back("M=M+1");
+void CommandHandler::incrementSP() {
+    print("@SP");
+    print("M=M+1");
 }
 
-void CommandHandler::decrementSP(vector<string>& toAdd) {
-    toAdd.push_back("@SP");
-    toAdd.push_back("M=M-1");
+void CommandHandler::decrementSP() {
+    print("@SP");
+    print("M=M-1");
 }
 
-void CommandHandler::popToD(vector<string>& toAdd) {
-    decrementSP(toAdd);
-    toAdd.push_back("@SP");
-    toAdd.push_back("A=M");//A = SP
-    toAdd.push_back("D=M");//D = Ram[SP]
+void CommandHandler::popToD() {
+    decrementSP();
+    print({
+        "@SP",
+        "A=M",
+        "D=M"
+    });
 }
 
-void CommandHandler::popToA(vector<string>& toAdd) {
-    decrementSP(toAdd);
-    toAdd.push_back("@SP");
-    toAdd.push_back("A=M");//A = SP
-    toAdd.push_back("A=M");//A = Ram[SP]
+void CommandHandler::popToA() {
+    decrementSP();
+    print({
+        "@SP",
+        "A=M",
+        "A=M"
+    });
 }
 
-void CommandHandler::pushD(vector<string>& toAdd) {
-    toAdd.push_back("@SP");
-    toAdd.push_back("A=M");
-    toAdd.push_back("M=D");
-    incrementSP(toAdd);
+void CommandHandler::pushD() {
+    print({
+        "@SP",
+        "A=M",
+        "M=D"
+        });
+    incrementSP();
 }
 
-void CommandHandler::pushA(vector<string>& toAdd) {
-    toAdd.push_back("D=A");
-    toAdd.push_back("@SP");
-    toAdd.push_back("A=M");
-    toAdd.push_back("M=D");
-    incrementSP(toAdd);
+void CommandHandler::pushA() {
+    print({
+        "D=A",
+        "@SP",
+        "A=M",
+        "M=D"
+    });
+    incrementSP();
 }
 
 //when inserting the operation, D will have the top element of the stack in it, and A the second to top element of
 //the stack. After the operation, d will be pushed to the stack.
-vector<string> CommandHandler::twoToOneElementsWithOperation(vector<string> operation) {
-    vector<string> out;
-    popToD(out);
-    vector<string> append = {
+void CommandHandler::twoToOneElementsWithOperation(vector<string> operation) {
+    popToD();
+    print({
         "@SP",
         "A=M-1",//A = SP - 1
         "A=M"//A = Ram[SP]
 
         // For Exmplae add would put "D=D+A" in this place
-    };
-    Utility::append(append, operation);
-    decrementSP(append);
-    pushD(append);
-    Utility::append(out, append);
-    return out;
+    });
+    print(operation);
+    decrementSP();
+    pushD();
 }
 
-vector<string> CommandHandler::compare(string instruction) {
-    return twoToOneElementsWithOperation(
+void CommandHandler::compare(string instruction) {
+        twoToOneElementsWithOperation(
         { "D=A-D",
           "@TRUE" + std::to_string(nameCounter),
           "D;" + instruction,
@@ -305,53 +295,42 @@ vector<string> CommandHandler::compare(string instruction) {
 
 //projekt 8------------------------------------------------------------------------------
 
-vector<string> CommandHandler::gotoLabel(string label) {
-    return {
+void CommandHandler::gotoLabel(string label) {
+    print({
         "@" + label,
         "0;JMP"
-    };
+    });
 }
 
-vector<string> CommandHandler::conditionalGotoLabel(string label) {
-    vector<string> out;
-    popToD(out);
-    vector<string> append = {
+void CommandHandler::conditionalGotoLabel(string label) {
+    popToD();
+    print({
         "@" + label,
         "D;JNE"
-    };
-    Utility::append(out, append);
-    return out;
+    });
 }
 
 int functionsCalled = 0;
-vector<string> CommandHandler::call(string functionName, string argumentCount) {
+void CommandHandler::call(string functionName, string argumentCount) {
     currentFunctionName = functionName;
     //push return adrfess
-    vector<string> out = { "@" + functionName + "_return" + std::to_string(functionsCalled) };//label is below all the pushes
-    pushA(out);
+    print("@" + functionName + "_return" + std::to_string(functionsCalled));//label is below all the pushes
+    pushA();
     //push registers
-    Utility::append(out, {
-        "@LCL",
-        "D=M"
-        });
-    pushD(out);
-    Utility::append(out, {
-        "@ARG",
-        "D=M"
-        });
-    pushD(out);
-    Utility::append(out, {
-        "@THIS",
-        "D=M"
-        });
-    pushD(out);
-    Utility::append(out, {
-        "@THAT",
-        "D=M"
-        });
-    pushD(out);
+    print("@LCL");//we cant use vector print here because c++ somehow cant differentiate a vector of two strings and a string...
+    print("D=M");
+    pushD();
+    print("@ARG");
+    print("D=M");
+    pushD();
+    print("@THIS");
+    print("D=M");
+    pushD();
+    print("@THAT");
+    print("D=M");
+    pushD();
     //ARG = SP-nArgs-5
-    Utility::append(out, {
+    print({
         "@SP",
         "D=M",
         "@5",
@@ -359,37 +338,36 @@ vector<string> CommandHandler::call(string functionName, string argumentCount) {
         "@" + argumentCount,
         "D=D-A",
         "@ARG",
-        "M=D" });
+        "M=D" 
+    });
     //LCL = SP
-    Utility::append(out, {
+    print({
         "@SP",
         "D=M",
         "@LCL",
         "M=D"
-        });
+    });
 
     //goto function
-    Utility::append(out, gotoLabel(functionName + "_start"));
+    gotoLabel(functionName + "_start");
     //return label
-    out.push_back("(" + functionName + "_return" + std::to_string(functionsCalled++) + ")");
-    return out;
+    print("(" + functionName + "_return" + std::to_string(functionsCalled++) + ")");
 }
 
-vector<string> CommandHandler::function(string functionName, string localVariableCount) {
-    vector<string> out = {
+void CommandHandler::function(string functionName, string localVariableCount) {
+    print({
         "(" + functionName + "_start)",
-        "D=0" };//so that we always push 0 in the following code
+        "D=0" 
+    });//so that we always push 0 in the following code
     for (int i = 0; i < std::stoi(localVariableCount); i++) {
-        pushD(out);
+        pushD();
     }
-    return out;
 }
 
 int tempCounter;//so that the temporary variables are unique
-vector<string> CommandHandler::returnFromFunction(string functionName) {
-
+void CommandHandler::returnFromFunction(string functionName) {
     string frame = "frame" + std::to_string(tempCounter);
-    vector<string> out = {
+    print({
         "@LCL",
         "D=M",//D = address in LCL
         "@14",//Frame in 14 (popToD uses 13)
@@ -399,10 +377,10 @@ vector<string> CommandHandler::returnFromFunction(string functionName) {
         "D=M",//D = *(frame -5)
         "@15",//return address into R15
         "M=D"
-    };
+    });
     //pop to *ARG
-    popToD(out);
-    Utility::append(out, {
+    popToD();
+    print({
         "@ARG",
         "A=M",
         "M=D",
@@ -449,7 +427,51 @@ vector<string> CommandHandler::returnFromFunction(string functionName) {
         "@15",
         "A=M",
         "0,JMP"
-        });
+    });
+}
 
+vector<string> CommandHandler::staticInitialisations() {
+    //this map will hold how many static variables the class needs. If static variables 1 and 3 are used, we create variables 1, 2 and 3, because
+    //it seems the user wants the second static variable to exist, and maybe he wants to use them in assembly code that he mixes with the vm-translated
+    //code. 
+    map<string, int> maxStaticIndexForClass;
+    int oldLine = parser.getLineNumber();
+    while (parser.hasMoreLines()) {
+        //for the collective of all functions of the class, find the highest index of static that is read or written. That, plus 1, is the length
+        //of that static segment that should be dedicated to this class.
+        if (parser.isLineFunctionStart()) {
+            vector<string> functionLines = parser.readFunction();
+
+            int highestStaticVariableIndex = -1;
+            int currentStaticVariableIndex = -1;
+            for (string line : functionLines) {
+                if (line.substr(0, 11) == "push static") {//indices 0 to 10
+                    currentStaticVariableIndex = std::stoi(line.substr(12, 12));//index 12
+                }
+                else if (line.substr(0, 10) == "pop static") {//indices 0 to 9
+                    currentStaticVariableIndex = std::stoi(line.substr(11, 11));//index 11
+                }
+
+                if (currentStaticVariableIndex > highestStaticVariableIndex) {
+                    highestStaticVariableIndex = currentStaticVariableIndex;
+                }
+            }
+
+            actualizeCurrentClass();
+            if (maxStaticIndexForClass[currentClass] < highestStaticVariableIndex + 1) {
+                maxStaticIndexForClass[currentClass] = highestStaticVariableIndex + 1;
+            }
+        }
+        parser.advance();
+    }
+    parser.gotoLine(oldLine);
+
+    vector<string> out;
+    for (auto entry : maxStaticIndexForClass) {
+        for (int i = 0; i < entry.second; i++) {
+            out.push_back("@" + entry.first + ".static" + std::to_string(i));
+            out.push_back("M=0");//init the variables to 0
+        }
+    }
     return out;
 }
