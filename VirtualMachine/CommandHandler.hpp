@@ -65,6 +65,7 @@ private:
     void function(string functionName, string localVariableCount);
     void returnFromFunction(string functionName);
     string currentFunctionName;
+    int functionsCalled = 0;//used to differentiate return labels
 
     //maps the class and the index of the static variable to the name of a variable declared with @...
     //Like this we can give the responsibility of distributing ram adresses for static variables to the assembler!

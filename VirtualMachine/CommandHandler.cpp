@@ -310,7 +310,6 @@ void CommandHandler::conditionalGotoLabel(string label) {
     });
 }
 
-int functionsCalled = 0;
 void CommandHandler::call(string functionName, string argumentCount) {
     currentFunctionName = functionName;
     //push return adrfess
@@ -364,9 +363,7 @@ void CommandHandler::function(string functionName, string localVariableCount) {
     }
 }
 
-int tempCounter;//so that the temporary variables are unique
 void CommandHandler::returnFromFunction(string functionName) {
-    string frame = "frame" + std::to_string(tempCounter);
     print({
         "@LCL",
         "D=M",//D = address in LCL
